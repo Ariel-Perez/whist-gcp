@@ -26,9 +26,37 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Client type
+type Client struct {
+	ID int
+	Name string
+}
+
+// Room type
+type Room struct {
+	Name string
+	Connections map[string]*websocket.Conn
+}
+
+// Broadcast sends a byte message to all the clients in a room.
+func (room Room) Broadcast(message []byte) {
+	for _, connection := range room.Connections {
+		if err := connection.WriteMessage(websocket.TextMessage, message); err != nil {
+			log.Printf("conn.WriteMessage: %v", err)
+		}
+	}
+}
+
+// BroadcastString sends a string message to all the clients in a room.
+func (room Room) BroadcastString(message string) {
+	room.Broadcast([]byte(message))
+}
+
 func main() {
+	room := Room{"Default", make(map[string]*websocket.Conn)}
+
 	http.Handle("/", http.FileServer(http.Dir("static")))
-	http.HandleFunc("/ws", socketHandler)
+	http.HandleFunc("/ws", room.socketHandler)
 	http.HandleFunc("/_ah/health", healthCheckHandler)
 
 	port := os.Getenv("PORT")
@@ -48,7 +76,8 @@ var upgrader = websocket.Upgrader{
 }
 
 // socketHandler echos websocket messages back to the client.
-func socketHandler(w http.ResponseWriter, r *http.Request) {
+func (room Room) socketHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	conn, err := upgrader.Upgrade(w, r, nil)
 	defer conn.Close()
 
@@ -57,15 +86,22 @@ func socketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	name := string(r.FormValue("name"))
+	room.BroadcastString(name + " has joined the room.")
+	defer room.BroadcastString(name + " has left the room.")
+
+	room.Connections[name] = conn
+	defer delete(room.Connections, name)
+
 	for {
 		messageType, p, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("conn.ReadMessage: %v", err)
 			return
 		}
-		if err := conn.WriteMessage(messageType, p); err != nil {
-			log.Printf("conn.WriteMessage: %v", err)
-			return
+
+		if messageType == websocket.TextMessage {
+			room.BroadcastString(name + " " + string(p))
 		}
 	}
 }

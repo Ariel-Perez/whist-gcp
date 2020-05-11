@@ -59,10 +59,14 @@ limitations under the License.
       /* If the main page is served via https, the WebSocket must be served via
          "wss" (WebSocket Secure) */
       var scheme = window.location.protocol == "https:" ? 'wss://' : 'ws://';
+      var urlParams = new URLSearchParams(window.location.search);
       var webSocketUri =  scheme
                           + window.location.hostname
                           + (location.port ? ':'+location.port: '')
                           + '/ws';
+      if (urlParams.has('name')) {
+        webSocketUri += '?name=' + urlParams.get('name');
+      }
 
       /* Helper to keep an activity log on the page. */
       function log(text, label) {
